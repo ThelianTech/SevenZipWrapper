@@ -1,0 +1,13 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/SevenZipWrapper/bin
+/SevenZipWrapper/obj
+/SevenZipWrapper.Benchmark/bin
+/SevenZipWrapper.Benchmark/obj
+/SevenZipWrapper.Example/bin
+/SevenZipWrapper.Example/obj
+/SevenZipWrapper.Tests/bin
+/SevenZipWrapper.Tests/obj
