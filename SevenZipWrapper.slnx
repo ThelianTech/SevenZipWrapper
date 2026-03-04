@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="CHANGELOG.md" />
+    <File Path="PHASE2-TESTING.md" />
+    <File Path="TODO.md" />
+  </Folder>
+  <Project Path="SevenZipWrapper.Benchmark/SevenZipWrapper.Benchmark.csproj" />
+  <Project Path="SevenZipWrapper.Example/SevenZipWrapper.Example.csproj" />
+  <Project Path="SevenZipWrapper.Tests/SevenZipWrapper.Tests.csproj" />
+  <Project Path="SevenZipWrapper/SevenZipWrapper.csproj" />
+</Solution>
