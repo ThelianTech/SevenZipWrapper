@@ -74,7 +74,7 @@ All notable changes to the **SevenZipWrapper** project are documented in this fi
 
 ### 📦 Native DLL
 
-- **Updated** bundled `7z.dll` from unknown legacy version → **v26.00** (2026-02-12).
+- **Updated** bundled `7z.dll` from 24.08 → **v26.00** (2026-02-12).
 - **Removed** x86 `7z.dll` — only x64 is shipped.
 - **Changed** native DLL packaging from `.targets` import to `<Content>` with `<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>` in csproj.
 
