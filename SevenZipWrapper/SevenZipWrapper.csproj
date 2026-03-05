@@ -5,13 +5,32 @@
     <RootNamespace>SevenZipWrapper</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NuGet package metadata -->
+    <PackageId>SevenZipWrapper</PackageId>
+    <Version>0.9.0-beta</Version>
+    <Authors>ThelianTech</Authors>
+    <Description>A Modern .NET 10 managed wrapper around the native 7z.dll COM interface for extracting archives.</Description>
+    <PackageTags>7zip;7z;archive;extract;zip;rar;compression</PackageTags>
+    <PackageProjectUrl>https://github.com/ThelianTech/SevenZipWrapper</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/ThelianTech/SevenZipWrapper</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Copyright>Copyright © 2026 ThelianTech</Copyright>
   </PropertyGroup>
 
+  <!-- Include README in the package -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Native 7z.dll — packed as a runtime asset so it copies to consumer output -->
   <ItemGroup>
     <Content Include="x64\7z.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>x64\7z.dll</Link>
+      <PackageCopyToOutput>true</PackageCopyToOutput>
     </Content>
   </ItemGroup>
 
