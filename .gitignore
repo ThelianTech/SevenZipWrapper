@@ -14,3 +14,4 @@
 /nupkg
 /publish
 /SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
+*.ps1
