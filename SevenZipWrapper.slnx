@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path="BenchmarkResults.md" />
     <File Path="CHANGELOG.md" />
+    <File Path="package-dll.ps1" />
     <File Path="PHASE2-TESTING.md" />
-    <File Path="TODO.md" />
+    <File Path="README.md" />
   </Folder>
   <Project Path="SevenZipWrapper.Benchmark/SevenZipWrapper.Benchmark.csproj" />
   <Project Path="SevenZipWrapper.Example/SevenZipWrapper.Example.csproj" />
