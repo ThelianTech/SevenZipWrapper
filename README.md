@@ -39,7 +39,7 @@ A modern .NET 10 managed wrapper around the native [7z.dll](https://www.7-zip.or
 ## Installation
 
 ```
-dotnet add package SevenZipWrapper
+    dotnet add package SevenZipWrapper
 ```
 
 The NuGet package bundles the native x64\7z.dll and copies it to your output directory automatically via an MSBuild .targets file.
@@ -70,8 +70,8 @@ using SevenZipWrapper;
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.7z");
-archive.Extract("output-folder");
+    using var archive = new ArchiveFile("archive.7z");
+    archive.Extract("output-folder");
 ```
 
 ### Extract all with overwrite
@@ -84,8 +84,8 @@ archive.Extract("output-folder");
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.7z");
-archive.Extract("output-folder", overwrite: true);
+    using var archive = new ArchiveFile("archive.7z");
+    archive.Extract("output-folder", overwrite: true);
 ```
 
 ### List entries and their properties
@@ -101,12 +101,12 @@ archive.Extract("output-folder", overwrite: true);
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.zip");
+    using var archive = new ArchiveFile("archive.zip");
 
-foreach (ArchiveEntry entry in archive.Entries)
-{
-    Console.WriteLine($"{entry.FileName}  {entry.Size} bytes  Folder={entry.IsFolder}");
-}
+    foreach (ArchiveEntry entry in archive.Entries)
+    {
+        Console.WriteLine($"{entry.FileName}  {entry.Size} bytes  Folder={entry.IsFolder}");
+    }
 ```
 
 ### Extract a single entry to a file
@@ -119,8 +119,8 @@ foreach (ArchiveEntry entry in archive.Entries)
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.7z");
-archive.Entries[0].Extract("extracted-file.txt");
+    using var archive = new ArchiveFile("archive.7z");
+    archive.Entries[0].Extract("extracted-file.txt");
 ```
 
 ### Extract a single entry to a stream
@@ -137,12 +137,12 @@ archive.Entries[0].Extract("extracted-file.txt");
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.7z");
-using var memoryStream = new MemoryStream();
+    using var archive = new ArchiveFile("archive.7z");
+    using var memoryStream = new MemoryStream();
 
-archive.Entries[0].Extract(memoryStream);
+    archive.Entries[0].Extract(memoryStream);
 
-byte[] data = memoryStream.ToArray();
+    byte[] data = memoryStream.ToArray();
 ```
 
 ### Selective extraction via callback
@@ -160,13 +160,13 @@ Extract only '.txt' files to a custom location:
     }
 
     // Declaration-scoped
-using var archive = new ArchiveFile("archive.7z");
+    using var archive = new ArchiveFile("archive.7z");
 
-archive.Extract(entry =>
-    entry.FileName?.EndsWith(".txt") == true
-        ? Path.Combine("output", entry.FileName)
-        : null  // returning null skips the entry
-);
+    archive.Extract(entry =>
+        entry.FileName?.EndsWith(".txt") == true
+            ? Path.Combine("output", entry.FileName)
+            : null  // returning null skips the entry
+    );
 ```
 
 ### Extract with progress reporting
@@ -290,13 +290,13 @@ Combine all features — extract only specific files, report progress, and suppo
     }
 
     // Declaration-scoped
-using var fileStream = File.OpenRead("archive.zip");
-using var archive = new ArchiveFile(fileStream, SevenZipFormat.Zip);
+    using var fileStream = File.OpenRead("archive.zip");
+    using var archive = new ArchiveFile(fileStream, SevenZipFormat.Zip);
 
-foreach (ArchiveEntry entry in archive.Entries)
-{
-    Console.WriteLine(entry.FileName);
-}
+    foreach (ArchiveEntry entry in archive.Entries)
+    {
+        Console.WriteLine(entry.FileName);
+    }
 ```
 
 ### Auto-detect format from stream signature
@@ -310,10 +310,10 @@ foreach (ArchiveEntry entry in archive.Entries)
     }
 
     // Declaration-scoped
-using var fileStream = File.OpenRead("archive.bin");
-using var archive = new ArchiveFile(fileStream); // format auto-detected from magic bytes
+    using var fileStream = File.OpenRead("archive.bin");
+    using var archive = new ArchiveFile(fileStream); // format auto-detected from magic bytes
 
-Console.WriteLine($"Detected format: {archive.Format}");
+    Console.WriteLine($"Detected format: {archive.Format}");
 ```
 
 ---
@@ -493,21 +493,21 @@ If you're coming from the original [SevenZipExtractor](https://github.com/adocon
 ## Project Structure
 
 ```
-SevenZipWrapper/
-├── ArchiveFile.cs              # Main public API
-├── ArchiveEntry.cs             # Archive entry (file/folder)
-├── SevenZipFormat.cs           # Supported format enum
-├── SevenZipException.cs        # Custom exception type
-├── Formats.cs                  # FrozenDictionary format mappings
-├── Callbacks/
-│   ├── ArchiveStreamCallback.cs    # Single entry → Stream
-│   ├── ArchiveStreamsCallback.cs   # All entries → Stream list
-│   └── ArchiveFileCallback.cs     # Single entry → file
-├── Interop/
-│   ├── SevenZipInterop.cs     # COM interfaces, PropVariant, stream wrappers
-│   └── SevenZipHandle.cs      # Native library loading via NativeLibrary API
-└── x64/
-    └── 7z.dll                 # Native 7z.dll v26.00 (bundled)
+    SevenZipWrapper/
+    ├── ArchiveFile.cs              # Main public API
+    ├── ArchiveEntry.cs             # Archive entry (file/folder)
+    ├── SevenZipFormat.cs           # Supported format enum
+    ├── SevenZipException.cs        # Custom exception type
+    ├── Formats.cs                  # FrozenDictionary format mappings
+    ├── Callbacks/
+    │   ├── ArchiveStreamCallback.cs    # Single entry → Stream
+    │   ├── ArchiveStreamsCallback.cs   # All entries → Stream list
+    │   └── ArchiveFileCallback.cs     # Single entry → file
+    ├── Interop/
+    │   ├── SevenZipInterop.cs     # COM interfaces, PropVariant, stream wrappers
+    │   └── SevenZipHandle.cs      # Native library loading via NativeLibrary API
+    └── x64/
+        └── 7z.dll                 # Native 7z.dll v26.00 (bundled)
 ```
 ---
 
@@ -516,19 +516,19 @@ SevenZipWrapper/
 ```
     git clone https://github.com/ThelianTech/SevenZipWrapper.git
     cd SevenZipWrapper
-dotnet build SevenZipWrapper -c Release
+    dotnet build SevenZipWrapper -c Release
 ```
 
 ### Run tests
 
 ```
-dotnet test SevenZipWrapper.Tests -c Release
+    dotnet test SevenZipWrapper.Tests -c Release
 ```
 
 ### Run benchmarks
 
 ```
-dotnet run --project SevenZipWrapper.Benchmark -c Release
+    dotnet run --project SevenZipWrapper.Benchmark -c Release
 ```
 ---
 
