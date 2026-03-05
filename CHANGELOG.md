@@ -1,4 +1,4 @@
-﻿# Changelog
+﻿	# Changelog
 
 All notable changes to the **SevenZipWrapper** project are documented in this file.
 
@@ -7,7 +7,55 @@ All notable changes to the **SevenZipWrapper** project are documented in this fi
 
 ---
 
-## [1.0.0] — 2026-03-04
+## [0.9.5] — 2026-03-05
+
+### 🔧 Core Library — `SevenZipWrapper`
+
+#### Progress Reporting & Cancellation Support
+
+- **Added** `Extract(string, bool, Action<int>?, CancellationToken, string?)` overload — extract all entries with per-file progress callback and cancellation support.
+- **Added** `Extract(Func<ArchiveEntry, string?>, Action<int>?, CancellationToken, string?)` overload — selective extraction with per-file progress callback and cancellation support.
+- **No breaking changes** — existing `Extract(string, bool, string?)` and `Extract(Func<>, string?)` overloads remain unchanged.
+
+#### Callback Implementation (`ArchiveStreamsCallback`)
+
+- **Added** `Action<int>? onFileExtracted` parameter (default `null`) — invoked after each file is successfully extracted with the cumulative count (1-based).
+- **Added** `CancellationToken cancellationToken` parameter (default `default`) — checked in `GetStream()` before each file; returns `E_ABORT` (`0x80004004`) to stop 7z.dll.
+- **Added** `_currentEntryHasStream` flag — tracks whether the current entry had an actual output stream. `SetOperationResult` only increments the counter and fires the callback for entries that had a stream, preventing folders and skipped entries from inflating the count.
+- **Added** `_filesExtracted` counter — tracks cumulative files extracted for progress reporting.
+- **Wired** `SetOperationResult(OperationResult)` — previously a no-op, now increments counter and invokes `onFileExtracted` on `OperationResult.OK` when the entry had a stream.
+- **Wired** `GetStream()` cancellation check — returns `E_ABORT` to 7z.dll when `CancellationToken` is cancelled.
+- After `_archive.Extract()` returns, `cancellationToken.ThrowIfCancellationRequested()` surfaces cancellation as `OperationCanceledException`.
+
+---
+
+### 🧪 Tests — `SevenZipWrapper.Tests`
+
+#### New Test Classes
+
+| Class | Tests | Description |
+|-------|-------|-------------|
+| `ExtractProgressTests` | 6 | Per-file callback fires for ZIP/7z/RAR, sequential count increments, null callback safety, `Func<>` overload |
+| `ExtractCancellationTests` | 5 | Cancel before start, cancel mid-extraction, default token safety, existing overload regression |
+
+#### Test Results
+
+- **89 tests** in `SevenZipWrapper.Tests` — all passing.
+- Initial run had 3 failures (`Expected: 3, Actual: 4`) — `SetOperationResult` was firing for folders and skipped entries. Resolved by adding `_currentEntryHasStream` guard.
+
+---
+
+### 🔑 Design Decisions
+
+1. **`Action<int>` over `IProgress<T>`** — simplest possible contract with zero allocation. `IProgress<T>` support is planned separately for byte-level progress.
+2. **`E_ABORT` (`0x80004004`)** — standard COM HRESULT for aborting operations; 7z.dll respects this from `GetStream` and stops its extraction loop.
+3. **Positional parameters (no defaults)** on new `Extract` overloads — avoids call-site ambiguity with existing overloads.
+4. **`_currentEntryHasStream` guard** — 7z.dll calls `SetOperationResult(OK)` for every entry including folders; the flag ensures only actual file extractions are counted.
+5. **`finally` block** — all file streams are disposed even when cancellation occurs.
+
+---
+
+## [0.9.0] — 2026-03-04
 
 ### 🏗️ Project & Solution Restructure
 
