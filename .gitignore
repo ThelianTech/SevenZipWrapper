@@ -11,3 +11,6 @@
 /SevenZipWrapper.Example/obj
 /SevenZipWrapper.Tests/bin
 /SevenZipWrapper.Tests/obj
+/nupkg
+/publish
+/SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
