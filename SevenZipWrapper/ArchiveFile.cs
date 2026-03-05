@@ -210,6 +210,121 @@ public sealed class ArchiveFile : IDisposable
         }
     }
 
+    /// <summary>
+    /// Extracts all entries to the specified output folder with progress reporting and cancellation support.
+    /// </summary>
+    /// <param name="outputFolder">Destination directory path.</param>
+    /// <param name="overwrite">If <see langword="true"/>, overwrites existing files.</param>
+    /// <param name="onFileExtracted">
+    /// Optional callback invoked after each file is successfully extracted.
+    /// The parameter is the cumulative count of files extracted so far (1-based).
+    /// Called on the calling thread — callers must dispatch to the UI thread if needed.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the extraction. When cancelled,
+    /// <see cref="OperationCanceledException"/> is thrown after 7z.dll returns.</param>
+    /// <param name="password">Optional password for encrypted archives.</param>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled during extraction.
+    /// </exception>
+    public void Extract(
+        string outputFolder,
+        bool overwrite,
+        Action<int>? onFileExtracted,
+        CancellationToken cancellationToken,
+        string? password = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputFolder);
+
+        Extract(entry =>
+        {
+            string fileName = Path.Combine(outputFolder, entry.FileName ?? string.Empty);
+
+            if (entry.IsFolder)
+            {
+                return fileName;
+            }
+
+            return !File.Exists(fileName) || overwrite ? fileName : null;
+        },
+        onFileExtracted,
+        cancellationToken,
+        password);
+    }
+
+    /// <summary>
+    /// Extracts entries using a callback to determine each entry's output path,
+    /// with progress reporting and cancellation support.
+    /// Return <see langword="null"/> from <paramref name="getOutputPath"/> to skip an entry.
+    /// </summary>
+    /// <param name="getOutputPath">A function that receives an <see cref="ArchiveEntry"/>
+    /// and returns the output path, or <see langword="null"/> to skip.</param>
+    /// <param name="onFileExtracted">
+    /// Optional callback invoked after each file is successfully extracted.
+    /// The parameter is the cumulative count of files extracted so far (1-based).
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the extraction. When cancelled,
+    /// <see cref="OperationCanceledException"/> is thrown after 7z.dll returns.</param>
+    /// <param name="password">Optional password for encrypted archives.</param>
+    /// <exception cref="OperationCanceledException">
+    /// Thrown when <paramref name="cancellationToken"/> is cancelled during extraction.
+    /// </exception>
+    public void Extract(
+        Func<ArchiveEntry, string?> getOutputPath,
+        Action<int>? onFileExtracted,
+        CancellationToken cancellationToken,
+        string? password = null)
+    {
+        ArgumentNullException.ThrowIfNull(getOutputPath);
+
+        List<Stream?> fileStreams = [];
+
+        try
+        {
+            foreach (ArchiveEntry entry in Entries)
+            {
+                string? outputPath = getOutputPath(entry);
+
+                if (outputPath is null)
+                {
+                    fileStreams.Add(null);
+                    continue;
+                }
+
+                if (entry.IsFolder)
+                {
+                    Directory.CreateDirectory(outputPath);
+                    fileStreams.Add(null);
+                    continue;
+                }
+
+                string? directoryName = Path.GetDirectoryName(outputPath);
+
+                if (!string.IsNullOrWhiteSpace(directoryName))
+                {
+                    Directory.CreateDirectory(directoryName);
+                }
+
+                fileStreams.Add(File.Create(outputPath));
+            }
+
+            _archive.Extract(
+                null,
+                0xFFFFFFFF,
+                0,
+                new ArchiveStreamsCallback(fileStreams, password, onFileExtracted, cancellationToken));
+
+            // If 7z.dll returned due to E_ABORT, surface as OperationCanceledException
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        finally
+        {
+            foreach (Stream? stream in fileStreams)
+            {
+                stream?.Dispose();
+            }
+        }
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
