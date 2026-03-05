@@ -5,6 +5,7 @@
     <RootNamespace>SevenZipWrapper</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
 
     <!-- NuGet package metadata -->
     <PackageId>SevenZipWrapper</PackageId>
