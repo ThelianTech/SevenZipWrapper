@@ -541,4 +541,4 @@ If you're coming from the original [SevenZipExtractor](https://github.com/adocon
 ## Acknowledgements
 
 - [Igor Pavlov](https://www.7-zip.org/) — 7-Zip and the 7z.dll native library
-- [adoconnection/SevenZipExtractor](https://github.com/adoconnection/SevenZipExtractor) — original .NET wrapper this project is based on
+- [adoconnection/SevenZipExtractor](https://github.com/adoconnection/SevenZipExtractor) — original .NET wrapper this project is based on as well as used their test files that were included in the old Unit Test Project. 
