@@ -7,6 +7,8 @@
 /src/**/bin/
 /src/**/obj/
 /nupkg
+/artifacts
 /publish
 /SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
 *.ps1
+!/scripts/*.ps1
