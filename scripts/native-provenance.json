@@ -1,0 +1,22 @@
+{
+  "product": "7-Zip",
+  "version": "26.02",
+  "architecture": "x64",
+  "peMachine": "8664",
+  "bundledPath": "src/SevenZipWrapper/x64/7z.dll",
+  "sha256": "69FD4DF057985C40E510E2FAC182881C7F85E90AA13EC703F763A8FDB2CE61F8",
+  "releaseUrl": "https://github.com/ip7z/7zip/releases/tag/26.02",
+  "sourceArtifact": {
+    "url": "https://github.com/ip7z/7zip/releases/download/26.02/7z2602-x64.exe",
+    "sha256": "6745FA76DC2EA031596D8678F6F6B99C3C1B435B4164A63485ADBBC7B8D82EF0",
+    "member": "7z.dll"
+  },
+  "extractionToolArtifact": {
+    "url": "https://github.com/ip7z/7zip/releases/download/26.02/7z2602-extra.7z",
+    "sha256": "081DF9E9311DFD9C9E0E98C1C80180B99BB51E4CB24156B5F3057FE3C259D70A",
+    "member": "x64/7za.exe"
+  },
+  "verification": "Bundled DLL SHA-256 matched to 7z.dll extracted from the official x64 installer without executing the installer. Official portable 7za.exe extracted from the extra archive unpacked the installer.",
+  "licenseMember": "License.txt",
+  "licenseSha256": "519AC0A4BDED9C18EA02E0AFB71F663D8C47373BD9FACD3AC96A79F51D77765D"
+}
