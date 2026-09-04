@@ -1,9 +1,57 @@
-﻿	# Changelog
+# Changelog
 
 All notable changes to the **SevenZipWrapper** project are documented in this file.
 
 > This project is a ground-up rewrite of [SevenZipExtractor](https://github.com/ThelianTech/SevenZipExtractor),  
 > modernized for **.NET 10** with current C# language features and APIs.
+
+---
+
+## [1.0.0] — 2026-09-04
+
+Changes below were checked against repository HEAD `2e161f1` on 2026-09-04. The build version is `1.0.0`; this entry does not assert that the package has been published.
+
+### 🔧 Core Library — `SevenZipWrapper`
+
+- **Added** a shared extraction engine for legacy overloads, policy-based extraction, single-entry extraction, and async facades.
+- **Added** `ExtractionOptions` with overwrite and unsafe-path policies, explicit continue-and-report behavior, progress, cancellation, and optional entry-count, entry-size, total-size, compression-ratio, and path-depth limits.
+- **Added** `ArchiveFailure`, `ArchiveExtractionException`, `SevenZipNativeException`, and per-entry outcomes through `ExtractionResult` and `ExtractWithResult`.
+- **Added** `ArchiveOpenOptions` and static `ArchiveFile.Open` methods for explicit format, native-library path, input ownership, and experimental opening credentials. Input streams must be readable and seekable; `LeaveOpen` preserves caller ownership.
+- **Added** `ExtractAsync` and `ExtractWithResultAsync` Task facades over synchronous native extraction. Operations on one archive and its entries are serialized, cancellation can interrupt gate waits, and disposal coordinates with active work.
+- **Preserved** existing extraction signatures, including `Extract(stream, null)`. Stream policy extraction uses the named `ExtractWithOptions` method to avoid overload ambiguity.
+- **Fixed** single-entry async file extraction to match synchronous overwrite behavior when options are omitted; explicitly supplied `Overwrite = false` still preserves existing output.
+
+### 🛡️ Extraction and Native Correctness
+
+- **Added** rooted path validation and handle-relative output creation, with reparse-point protection, duplicate/alias target detection, destination conflict handling, and exclusive no-overwrite creation.
+- **Added** early metadata/resource checks, runtime output-byte accounting, and handle-based cleanup of incomplete owned output files. Extraction does not provide transactional rollback of completed files or overwritten originals.
+- **Fixed** native HRESULT and operation-result handling so failed extraction cannot be reported as success; original caller callback and stream exceptions retain their identity.
+- **Hardened** metadata conversion, native export validation, construction cleanup, entry lifetime enforcement, and disposal reentrancy handling.
+- **Corrected** leading-signature detection, including empty ZIP handling, and removed unreliable leading probes for TAR, ISO, LZH, DMG, and VHD. Format mappings do not imply equally verified compatibility; see [CompatibilityAndFormats.md](CompatibilityAndFormats.md).
+- **Restricted** default native loading to application-local candidates, with explicit-path override and a Windows x64 runtime guard; removed the system 7-Zip installation fallback.
+- **Updated** the bundled native engine to **7-Zip 26.02**, with recorded binary provenance, checksum/architecture verification, upstream license text, and third-party notices.
+
+### 📦 Build, Packaging, and Repository Layout
+
+- **Moved** solution projects under `src/` and supporting documentation under `docs/`; updated solution references and README paths.
+- **Centralized** build/package versioning in root `Directory.Build.props`, alongside deterministic builds, warnings-as-errors, and lock-file restore settings. Added the SDK pin in `global.json` and dependency lock files for all four projects.
+- **Added** `scripts/Build-Package.ps1` for locked restore, clean Release build, tests with coverage, packaging, and consumer verification. `-Version` supplies a consistent temporary override; uploading requires explicit `-Publish` and `NUGET_API_KEY`.
+- **Added** `scripts/Verify-Package.ps1`, which evaluates package identity/version from MSBuild, checks the exact package contents and native provenance, and runs isolated package-consumer build and publish extraction checks.
+- **Added** a Windows x64 GitHub Actions verification workflow with retained test/package evidence. The workflow does not upload packages to NuGet.
+- **Fixed** package inclusion of the root README, third-party notices, and native license; retained native content/contentFiles copying for build and publish output.
+- **Removed** 184 previously tracked generated `bin`/`obj` files from the repository while retaining local files. Recursive ignore rules cover project build output under `src/`; source native assets and dependency lock files remain tracked.
+
+### 🧪 Verification and Documentation
+
+- **Expanded** regression coverage for hostile paths, output conflicts, resource limits, corruption/native failures, stream ownership, lifecycle, async serialization, cancellation, and source compatibility. The recorded local September 4 verification passed **209 tests**, with **0 failures or skips**, and a clean Release build with **0 warnings or errors**.
+- **Verified locally** package inspection, native provenance, isolated consumer restore/build/publish, and extraction smoke checks. See [ReleaseProcess.md](ReleaseProcess.md) for commands and recorded evidence.
+- **Restored** benchmark CLI argument handling, selected the shipped `7z.7z` fixture, and isolated temporary output directories. Four extraction Dry runs completed as smoke checks; historical benchmark tables are not current performance measurements.
+- **Updated** the README in place, retaining its structure, examples, and historical benchmark tables; added API, extraction, compatibility, migration, release, and licensing documentation.
+
+### ⚠️ Remaining Limitations
+
+- Encrypted-archive support remains **experimental** under the permitted 1.0 fallback; the complete header/content encryption matrix is not certified.
+- Archive creation, transactional staging/rollback, broader platform support, and additional format/encryption certification remain outside the implemented 1.0 scope.
 
 ---
 

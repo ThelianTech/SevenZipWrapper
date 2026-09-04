@@ -12,3 +12,4 @@
 /SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
 *.ps1
 !/scripts/*.ps1
+/docs/Archives
