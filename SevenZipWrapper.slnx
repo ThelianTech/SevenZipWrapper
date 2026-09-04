@@ -1,10 +1,12 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
     <File Path="docs/Audit_Report_09-03-26.md" />
     <File Path="docs/BenchmarkResults.md" />
     <File Path="docs/CHANGELOG.md" />
-    <File Path="package-dll.ps1" />
+    <File Path="global.json" />
     <File Path="README.md" />
+    <File Path="scripts/Verify-Package.ps1" />
   </Folder>
   <Project Path="src/SevenZipWrapper.Benchmark/SevenZipWrapper.Benchmark.csproj" />
   <Project Path="src/SevenZipWrapper.Example/SevenZipWrapper.Example.csproj" />
