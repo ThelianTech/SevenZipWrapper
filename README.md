@@ -587,17 +587,6 @@ From the repository root in PowerShell 7:
 ```
 
 The verified `.nupkg` is written to `artifacts/packages`. Nothing is uploaded by default.
-To explicitly rebuild, verify, and publish to NuGet.org:
-
-```powershell
-$env:NUGET_API_KEY = Read-Host 'NuGet API key' -MaskInput
-try {
-    ./scripts/Build-Package.ps1 -Publish
-}
-finally {
-    Remove-Item Env:NUGET_API_KEY -ErrorAction SilentlyContinue
-}
-```
 
 `dotnet pack` creates the package and `dotnet nuget push` uploads it. The existing
 `Verify-Package.ps1` checks an already-built package, including native provenance and
