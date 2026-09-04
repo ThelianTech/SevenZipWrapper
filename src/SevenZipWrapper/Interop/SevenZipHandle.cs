@@ -1,69 +1,54 @@
 namespace SevenZipWrapper.Interop;
-
 using System.Runtime.InteropServices;
-
-/// <summary>
-/// Manages the lifetime of the native 7z.dll library and creates <see cref="IInArchive"/> instances.
-/// Replaces the old <c>Kernel32Dll</c>, <c>SafeLibraryHandle</c>, and <c>SevenZipHandle</c> classes
-/// with the modern <see cref="NativeLibrary"/> API.
-/// </summary>
 internal sealed class SevenZipHandle : IDisposable
 {
     private IntPtr _libraryHandle;
+    private readonly CreateObjectDelegate _createObject;
     private bool _disposed;
-
-    /// <summary>
-    /// Loads <paramref name="libraryPath"/> and validates it exports <c>GetHandlerProperty</c>.
-    /// </summary>
-    /// <param name="libraryPath">Full path to <c>7z.dll</c>.</param>
-    /// <exception cref="SevenZipException">The library could not be loaded or is not a valid 7z.dll.</exception>
     public SevenZipHandle(string libraryPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(libraryPath);
-
-        _libraryHandle = NativeLibrary.Load(libraryPath);
-
-        if (!NativeLibrary.TryGetExport(_libraryHandle, "GetHandlerProperty", out _))
+        try
         {
-            NativeLibrary.Free(_libraryHandle);
+            _libraryHandle = NativeLibrary.Load(libraryPath);
+            _createObject = Marshal.GetDelegateForFunctionPointer<CreateObjectDelegate>(RequireExport(_libraryHandle, "CreateObject"));
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException or SevenZipNativeException)
+        {
+            if (_libraryHandle != IntPtr.Zero) NativeLibrary.Free(_libraryHandle);
             _libraryHandle = IntPtr.Zero;
-            throw new SevenZipException($"'{libraryPath}' is not a valid 7z.dll — missing GetHandlerProperty export.");
+            if (ex is SevenZipNativeException) throw;
+            throw new SevenZipNativeException(new(FailureKind.NativeLibraryFailure, "Unable to load the native archive library."), ex);
         }
     }
-
-    /// <summary>
-    /// Creates an <see cref="IInArchive"/> COM instance for the specified format class ID.
-    /// </summary>
-    /// <param name="classId">The 7z format GUID (from <see cref="Formats.FormatGuidMapping"/>).</param>
-    /// <returns>An <see cref="IInArchive"/> instance, or <see langword="null"/> if creation failed.</returns>
-    /// <exception cref="ObjectDisposedException">This handle has been disposed.</exception>
-    public IInArchive? CreateInArchive(Guid classId)
+    internal static IntPtr RequireExport(IntPtr libraryHandle, string exportName)
+    {
+        if (!NativeLibrary.TryGetExport(libraryHandle, exportName, out IntPtr address))
+            throw new SevenZipNativeException(new(FailureKind.NativeLibraryFailure, $"Native archive library is missing required export {exportName}."));
+        return address;
+    }
+    public IInArchive CreateInArchive(Guid classId)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-
-        IntPtr procAddress = NativeLibrary.GetExport(_libraryHandle, "CreateObject");
-        CreateObjectDelegate createObject = Marshal.GetDelegateForFunctionPointer<CreateObjectDelegate>(procAddress);
-
-        Guid interfaceId = typeof(IInArchive).GUID;
-        createObject(ref classId, ref interfaceId, out object result);
-
-        return result as IInArchive;
+        return CreateInArchive(_createObject, classId);
     }
-
-    /// <inheritdoc />
+    internal static IInArchive CreateInArchive(CreateObjectDelegate createObject, Guid classId)
+    {
+        Guid interfaceId = typeof(IInArchive).GUID;
+        int status = createObject(ref classId, ref interfaceId, out object result);
+        if (status != 0 || result is not IInArchive)
+        {
+            if (OperatingSystem.IsWindows() && result is not null && Marshal.IsComObject(result)) Marshal.ReleaseComObject(result);
+            NativeStatus.Check(status, "object creation");
+            throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, "Native object creation returned an incompatible object.", NativeHResult: status));
+        }
+        return (IInArchive)result;
+    }
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (_libraryHandle != IntPtr.Zero)
-        {
-            NativeLibrary.Free(_libraryHandle);
-            _libraryHandle = IntPtr.Zero;
-        }
-
+        if (_disposed) return;
+        if (_libraryHandle != IntPtr.Zero) NativeLibrary.Free(_libraryHandle);
+        _libraryHandle = IntPtr.Zero;
         _disposed = true;
     }
 }

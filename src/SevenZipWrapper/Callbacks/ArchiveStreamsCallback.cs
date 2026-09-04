@@ -1,81 +1,65 @@
 namespace SevenZipWrapper.Callbacks;
-
 using SevenZipWrapper.Interop;
-
-/// <summary>
-/// Callback for extracting all archive entries to a list of <see cref="Stream"/>s.
-/// A <see langword="null"/> entry in the list means that entry should be skipped.
-/// </summary>
-internal sealed class ArchiveStreamsCallback(
-    IList<Stream?> streams,
-    string? password = null,
-    Action<int>? onFileExtracted = null,
-    CancellationToken cancellationToken = default)
-    : IArchiveExtractCallback, ICryptoGetTextPassword
+internal class ArchiveStreamsCallback : IArchiveExtractCallback, ICryptoGetTextPassword
 {
-    private readonly string _password = password ?? "";
+    private readonly IList<Stream?> _streams;
+    private readonly string? _password;
+    private readonly Action<int>? _onFileExtracted;
+    private readonly CancellationToken _cancellationToken;
+    private readonly IReadOnlyList<string?>? _entryNames;
+    private readonly Func<uint, Stream?>? _getStream;
     private int _filesExtracted;
     private bool _currentEntryHasStream;
-
-    public void SetTotal(ulong total)
+    private string? _currentEntryName;
+    internal CallbackState State { get; }
+    internal int CompletedFiles => _filesExtracted;
+    internal ArchiveStreamsCallback(IList<Stream?> streams, string? password = null,
+        Action<int>? onFileExtracted = null, CancellationToken cancellationToken = default,
+        CallbackState? state = null, IReadOnlyList<string?>? entryNames = null)
     {
+        _streams = streams; _password = password; _onFileExtracted = onFileExtracted;
+        _cancellationToken = cancellationToken; _entryNames = entryNames; State = state ?? new();
     }
-
-    public void SetCompleted(ref ulong completeValue)
-    {
-    }
-
+    protected ArchiveStreamsCallback(Func<uint, Stream?> getStream, string? password = null, CallbackState? state = null, CancellationToken cancellationToken = default)
+        : this(Array.Empty<Stream?>(), password, cancellationToken: cancellationToken, state: state) => _getStream = getStream;
+    public int SetTotal(ulong total) => State.HasFailure ? NativeStatus.Abort : 0;
+    public int SetCompleted(ref ulong completeValue) => State.HasFailure || _cancellationToken.IsCancellationRequested ? NativeStatus.Abort : 0;
+    public int PrepareOperation(AskMode askExtractMode) => State.HasFailure ? NativeStatus.Abort : 0;
     public int CryptoGetTextPassword(out string password)
     {
-        password = _password;
-        return 0;
+        password = _password ?? "";
+        if (_password is null) return State.Fail(new(FailureKind.MissingPassword, "This entry requires a password.", _currentEntryName));
+        return State.HasFailure ? NativeStatus.Abort : 0;
     }
-
     public int GetStream(uint index, out ISequentialOutStream? outStream, AskMode askExtractMode)
     {
-        // Check cancellation before starting each file.
-        // Returning E_ABORT tells 7z.dll to stop the extraction loop.
-        if (cancellationToken.IsCancellationRequested)
+        outStream = null; _currentEntryHasStream = false; _currentEntryName = null;
+        try
         {
-            _currentEntryHasStream = false;
-            outStream = null;
-            return unchecked((int)0x80004004); // E_ABORT
-        }
-
-        if (askExtractMode != AskMode.Extract)
-        {
-            _currentEntryHasStream = false;
-            outStream = null;
+            if (State.HasFailure || _cancellationToken.IsCancellationRequested) return NativeStatus.Abort;
+            if (askExtractMode != AskMode.Extract) return 0;
+            if (_entryNames is not null) _currentEntryName = _entryNames[checked((int)index)];
+            Stream? stream = _getStream is null ? _streams[checked((int)index)] : _getStream(index);
+            if (stream is null) return 0;
+            _currentEntryHasStream = true;
+            outStream = new OutStreamWrapper(stream, State, leaveOpen: true);
             return 0;
         }
-
-        Stream? stream = streams[(int)index];
-
-        if (stream is null)
-        {
-            _currentEntryHasStream = false;
-            outStream = null;
-            return 0;
-        }
-
-        _currentEntryHasStream = true;
-        outStream = new OutStreamWrapper(stream);
-        return 0;
+        catch (Exception ex) { return State.Capture(ex); }
     }
-
-    public void PrepareOperation(AskMode askExtractMode)
+    public int SetOperationResult(OperationResult resultEOperationResult)
     {
-    }
-
-    public void SetOperationResult(OperationResult resultEOperationResult)
-    {
-        // 7z.dll calls SetOperationResult after every entry, including folders
-        // and skipped entries. Only count entries that had an actual output stream
-        // and completed successfully.
-        if (resultEOperationResult == OperationResult.OK && _currentEntryHasStream)
+        try
         {
+            if (State.HasFailure) return NativeStatus.Abort;
+            if (!_currentEntryHasStream) return 0;
+            int status = State.RecordResult(resultEOperationResult, _currentEntryName);
+            if (status != 0) return status;
             _filesExtracted++;
-            onFileExtracted?.Invoke(_filesExtracted);
+            _onFileExtracted?.Invoke(_filesExtracted);
+            return 0;
         }
+        catch (Exception ex) { return State.Capture(ex); }
     }
+    internal void Complete(int status, CancellationToken cancellationToken = default) => State.Complete(status, cancellationToken);
 }

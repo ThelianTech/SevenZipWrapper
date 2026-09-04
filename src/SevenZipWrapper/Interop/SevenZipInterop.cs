@@ -24,6 +24,7 @@ internal struct PropVariant
     [FieldOffset(8)] public IntPtr pointerValue;
     [FieldOffset(8)] public byte byteValue;
     [FieldOffset(8)] public long longValue;
+    [FieldOffset(8)] public double doubleValue;
     [FieldOffset(8)] public FILETIME filetime;
     [FieldOffset(8)] public PropArray propArray;
 
@@ -59,32 +60,36 @@ internal struct PropVariant
                 break;
 
             default:
-                PropVariantClear(ref this);
+                NativeStatus.Check(PropVariantClear(ref this), "metadata cleanup");
                 break;
         }
     }
 
     public readonly object? GetObject()
     {
-        return VarType switch
-        {
-            VarEnum.VT_EMPTY => null,
-            VarEnum.VT_FILETIME => DateTime.FromFileTime(longValue),
-            _ => MarshalVariant()
-        };
-    }
-
-    private readonly object MarshalVariant()
-    {
-        GCHandle handle = GCHandle.Alloc(this, GCHandleType.Pinned);
-
         try
         {
-            return Marshal.GetObjectForNativeVariant(handle.AddrOfPinnedObject());
+            return VarType switch
+            {
+                VarEnum.VT_EMPTY or VarEnum.VT_NULL => null,
+                VarEnum.VT_FILETIME => DateTime.FromFileTime(longValue),
+                VarEnum.VT_DATE => DateTime.FromOADate(doubleValue),
+                VarEnum.VT_BSTR => pointerValue == IntPtr.Zero ? string.Empty : Marshal.PtrToStringBSTR(pointerValue),
+                VarEnum.VT_BOOL => unchecked((short)longValue) != 0,
+                VarEnum.VT_I1 => unchecked((sbyte)longValue),
+                VarEnum.VT_UI1 => unchecked((byte)longValue),
+                VarEnum.VT_I2 => unchecked((short)longValue),
+                VarEnum.VT_UI2 => unchecked((ushort)longValue),
+                VarEnum.VT_I4 or VarEnum.VT_INT => unchecked((int)longValue),
+                VarEnum.VT_UI4 or VarEnum.VT_UINT => unchecked((uint)longValue),
+                VarEnum.VT_I8 => longValue,
+                VarEnum.VT_UI8 => unchecked((ulong)longValue),
+                _ => throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, $"Unsupported native metadata type {VarType}."))
+            };
         }
-        finally
+        catch (ArgumentException ex)
         {
-            handle.Free();
+            throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, "Native metadata contains an invalid time value."), ex);
         }
     }
 }
@@ -105,7 +110,8 @@ internal enum OperationResult : int
     OK = 0,
     UnsupportedMethod,
     DataError,
-    CRCError
+    CRCError,
+    Unavailable, UnexpectedEnd, DataAfterEnd, NotArchive, HeadersError, WrongPassword
 }
 
 internal enum ItemPropId : uint
@@ -175,8 +181,8 @@ internal enum ArchivePropId : uint
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IProgress
 {
-    void SetTotal(ulong total);
-    void SetCompleted([In] ref ulong completeValue);
+    [PreserveSig] int SetTotal(ulong total);
+    [PreserveSig] int SetCompleted([In] ref ulong completeValue);
 }
 
 [ComImport]
@@ -236,9 +242,9 @@ internal interface IInArchiveGetStream
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface ISequentialInStream
 {
-    uint Read(
+    [PreserveSig] int Read(
         [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] byte[] data,
-        uint size);
+        uint size, IntPtr processedSize);
 }
 
 [ComImport]
@@ -258,11 +264,11 @@ internal interface ISequentialOutStream
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IInStream
 {
-    uint Read(
+    [PreserveSig] int Read(
         [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 1)] byte[] data,
-        uint size);
+        uint size, IntPtr processedSize);
 
-    void Seek(long offset, uint seekOrigin, IntPtr newPosition);
+    [PreserveSig] int Seek(long offset, uint seekOrigin, IntPtr newPosition);
 }
 
 [ComImport]
@@ -276,7 +282,7 @@ internal interface IOutStream
         uint size,
         IntPtr processedSize);
 
-    void Seek(long offset, uint seekOrigin, IntPtr newPosition);
+    [PreserveSig] int Seek(long offset, uint seekOrigin, IntPtr newPosition);
 
     [PreserveSig]
     int SetSize(long newSize);
@@ -330,8 +336,8 @@ internal interface IInArchive
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IArchiveExtractCallback
 {
-    void SetTotal(ulong total);
-    void SetCompleted([In] ref ulong completeValue);
+    [PreserveSig] int SetTotal(ulong total);
+    [PreserveSig] int SetCompleted([In] ref ulong completeValue);
 
     [PreserveSig]
     int GetStream(
@@ -339,8 +345,8 @@ internal interface IArchiveExtractCallback
         [MarshalAs(UnmanagedType.Interface)] out ISequentialOutStream? outStream,
         AskMode askExtractMode);
 
-    void PrepareOperation(AskMode askExtractMode);
-    void SetOperationResult(OperationResult resultEOperationResult);
+    [PreserveSig] int PrepareOperation(AskMode askExtractMode);
+    [PreserveSig] int SetOperationResult(OperationResult resultEOperationResult);
 }
 
 // ---------------------------------------------
@@ -371,51 +377,56 @@ internal delegate int GetHandlerProperty2Delegate(
 //  Stream Wrappers
 // ---------------------------------------------
 
-internal class StreamWrapper(Stream baseStream) : IDisposable
+internal class StreamWrapper(Stream baseStream, CallbackState? state = null, bool leaveOpen = false) : IDisposable
 {
     protected Stream BaseStream { get; } = baseStream;
-
-    public void Dispose()
+    internal CallbackState State { get; } = state ?? new();
+    public void Dispose() { if (!leaveOpen) BaseStream.Dispose(); }
+    public int Seek(long offset, uint seekOrigin, IntPtr newPosition)
     {
-        BaseStream.Close();
-    }
-
-    public virtual void Seek(long offset, uint seekOrigin, IntPtr newPosition)
-    {
-        long position = BaseStream.Seek(offset, (SeekOrigin)seekOrigin);
-
-        if (newPosition != IntPtr.Zero)
+        try
         {
-            Marshal.WriteInt64(newPosition, position);
+            long position = BaseStream.Seek(offset, (SeekOrigin)seekOrigin);
+            if (newPosition != IntPtr.Zero) Marshal.WriteInt64(newPosition, position);
+            return 0;
         }
+        catch (Exception ex) { return State.Capture(ex); }
     }
 }
-
-internal class InStreamWrapper(Stream baseStream) : StreamWrapper(baseStream), ISequentialInStream, IInStream
+internal sealed class InStreamWrapper(Stream baseStream, CallbackState? state = null, bool leaveOpen = false)
+    : StreamWrapper(baseStream, state, leaveOpen), ISequentialInStream, IInStream
 {
-    public uint Read(byte[] data, uint size)
+    public int Read(byte[] data, uint size, IntPtr processedSize)
     {
-        return (uint)BaseStream.Read(data, 0, (int)size);
+        try
+        {
+            if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, 0);
+            if (State.HasFailure) return NativeStatus.Abort;
+            int read = BaseStream.Read(data, 0, checked((int)size));
+            if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, read);
+            return 0;
+        }
+        catch (Exception ex) { return State.Capture(ex); }
     }
 }
-
-internal class OutStreamWrapper(Stream baseStream) : StreamWrapper(baseStream), ISequentialOutStream, IOutStream
+internal sealed class OutStreamWrapper(Stream baseStream, CallbackState? state = null, bool leaveOpen = false)
+    : StreamWrapper(baseStream, state, leaveOpen), ISequentialOutStream, IOutStream
 {
     public int SetSize(long newSize)
     {
-        BaseStream.SetLength(newSize);
-        return 0;
+        try { BaseStream.SetLength(newSize); return 0; }
+        catch (Exception ex) { return State.Capture(ex); }
     }
-
     public int Write(byte[] data, uint size, IntPtr processedSize)
     {
-        BaseStream.Write(data, 0, (int)size);
-
-        if (processedSize != IntPtr.Zero)
+        try
         {
-            Marshal.WriteInt32(processedSize, (int)size);
+            if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, 0);
+            if (State.HasFailure) return NativeStatus.Abort;
+            BaseStream.Write(data, 0, checked((int)size));
+            if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, checked((int)size));
+            return 0;
         }
-
-        return 0;
+        catch (Exception ex) { return State.Capture(ex); }
     }
 }

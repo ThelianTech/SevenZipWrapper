@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -16,15 +16,15 @@ public class Benchmarks {
 	private string _outputDir;
 	private string _singleFileDir;
 
-	[Params("7z.7z", "LT_Nemesis.7z")]
+	[Params("7z.7z")]
 	public string ArchiveFileName { get; set; }
 
 	private string ArchivePath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", ArchiveFileName);
 
 	[GlobalSetup]
 	public void Setup() {
-		_outputDir = Path.Combine(Path.GetTempPath(), "SevenZipBenchmark");
-		_singleFileDir = Path.Combine(Path.GetTempPath(), "SevenZipBenchmarkSingle");
+		_outputDir = Path.Combine(Path.GetTempPath(), "SevenZipBenchmark_" + Guid.NewGuid().ToString("N"));
+		_singleFileDir = Path.Combine(Path.GetTempPath(), "SevenZipBenchmarkSingle_" + Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(_singleFileDir);
 		Directory.CreateDirectory(_outputDir);
 	}

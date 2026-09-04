@@ -1,49 +1,16 @@
 namespace SevenZipWrapper.Callbacks;
-
 using SevenZipWrapper.Interop;
-
-/// <summary>
-/// Callback for extracting a single archive entry to a file path on disk.
-/// </summary>
-internal sealed class ArchiveFileCallback(uint fileNumber, string fileName)
-    : IArchiveExtractCallback
+internal sealed class ArchiveFileCallback : ArchiveStreamsCallback, IDisposable
 {
-    private OutStreamWrapper? _fileStream;
-
-    public void SetTotal(ulong total)
-    {
-    }
-
-    public void SetCompleted(ref ulong completeValue)
-    {
-    }
-
-    public int GetStream(uint index, out ISequentialOutStream? outStream, AskMode askExtractMode)
-    {
-        if (index != fileNumber || askExtractMode != AskMode.Extract)
+    private readonly FileStream?[] _owned;
+    internal ArchiveFileCallback(uint fileNumber, string fileName) : this(fileNumber, fileName, new FileStream?[1]) { }
+    private ArchiveFileCallback(uint fileNumber, string fileName, FileStream?[] owned)
+        : base(index =>
         {
-            outStream = null;
-            return 0;
-        }
-
-        string? fileDir = Path.GetDirectoryName(fileName);
-
-        if (!string.IsNullOrEmpty(fileDir))
-        {
-            Directory.CreateDirectory(fileDir);
-        }
-
-        _fileStream = new OutStreamWrapper(File.Create(fileName));
-        outStream = _fileStream;
-        return 0;
-    }
-
-    public void PrepareOperation(AskMode askExtractMode)
-    {
-    }
-
-    public void SetOperationResult(OperationResult resultEOperationResult)
-    {
-        _fileStream?.Dispose();
-    }
+            if (index != fileNumber) return null;
+            string? directory = Path.GetDirectoryName(fileName);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            return owned[0] ??= File.Create(fileName);
+        }) => _owned = owned;
+    public void Dispose() => _owned[0]?.Dispose();
 }

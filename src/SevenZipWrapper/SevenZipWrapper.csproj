@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -9,7 +9,6 @@
 
     <!-- NuGet package metadata -->
     <PackageId>SevenZipWrapper</PackageId>
-    <Version>0.9.5-beta</Version>
     <Authors>ThelianTech</Authors>
     <Description>A Modern .NET 10 managed wrapper around the native 7z.dll COM interface for extracting archives.</Description>
     <PackageTags>7zip;7z;archive;extract;zip;rar;compression</PackageTags>
@@ -21,15 +20,22 @@
     <Copyright>Copyright © 2026 ThelianTech</Copyright>
   </PropertyGroup>
 
-  <!-- Include README in the package -->
+  <!-- NU5100 concerns the deliberate native content asset, not a managed reference. -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
+  </PropertyGroup>
+
   <ItemGroup>
-    <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="\" />
+    <None Include="..\..\licenses\7zip-License.txt" Pack="true" PackagePath="licenses\" />
   </ItemGroup>
 
   <!-- Native 7z.dll — packed as a runtime asset so it copies to consumer output -->
   <ItemGroup>
     <Content Include="x64\7z.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       <Link>x64\7z.dll</Link>
       <PackageCopyToOutput>true</PackageCopyToOutput>
     </Content>

@@ -1,19 +1,17 @@
 namespace SevenZipWrapper;
 
-using SevenZipWrapper.Callbacks;
-using SevenZipWrapper.Interop;
-
 /// <summary>
 /// Represents a single entry (file or folder) inside a 7-Zip archive.
 /// </summary>
 public sealed class ArchiveEntry
 {
-    private readonly IInArchive _archive;
+    private readonly ArchiveFile _owner;
     private readonly uint _index;
+    internal uint Index => _index;
 
-    internal ArchiveEntry(IInArchive archive, uint index)
+    internal ArchiveEntry(ArchiveFile owner, uint index)
     {
-        _archive = archive;
+        _owner = owner;
         _index = index;
     }
 
@@ -97,42 +95,27 @@ public sealed class ArchiveEntry
     /// </summary>
     /// <param name="fileName">The destination file path.</param>
     /// <param name="preserveTimestamp">If <see langword="true"/>, sets the file's last-write time to <see cref="LastWriteTime"/>.</param>
-    public void Extract(string fileName, bool preserveTimestamp = true)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+    public void Extract(string fileName, bool preserveTimestamp = true) =>
+        _owner.ExtractEntry(this, fileName, new ExtractionOptions { Overwrite = true }, preserveTimestamp);
 
-        if (IsFolder)
-        {
-            Directory.CreateDirectory(fileName);
-            return;
-        }
+    /// <summary>Extracts this entry to a caller-owned stream.</summary>
+    public void Extract(Stream stream, string? password = null) =>
+        _owner.ExtractEntry(this, stream, new ExtractionOptions { Password = password });
 
-        string? directoryName = Path.GetDirectoryName(fileName);
+    /// <summary>Extracts this entry to a file using the specified extraction policy.</summary>
+    public void Extract(string fileName, ExtractionOptions options, bool preserveTimestamp = true) =>
+        _owner.ExtractEntry(this, fileName, options, preserveTimestamp);
 
-        if (!string.IsNullOrWhiteSpace(directoryName))
-        {
-            Directory.CreateDirectory(directoryName);
-        }
+    /// <summary>Extracts to a caller-owned stream using the specified extraction policy.</summary>
+    public void ExtractWithOptions(Stream stream, ExtractionOptions options) =>
+        _owner.ExtractEntry(this, stream, options);
 
-        using var fileStream = File.Create(fileName);
-        Extract(fileStream);
-        fileStream.Close();
+    /// <summary>Schedules extraction to a file through the archive's serialized operation gate.</summary>
+    public Task ExtractAsync(string fileName, ExtractionOptions? options = null, bool preserveTimestamp = true) =>
+        Task.Run(() => _owner.ExtractEntry(this, fileName, options ?? new ExtractionOptions { Overwrite = true }, preserveTimestamp),
+            options?.CancellationToken ?? default);
 
-        if (preserveTimestamp)
-        {
-            File.SetLastWriteTime(fileName, LastWriteTime);
-        }
-    }
-
-    /// <summary>
-    /// Extracts this entry to the specified <see cref="Stream"/>.
-    /// </summary>
-    /// <param name="stream">The destination stream.</param>
-    /// <param name="password">Optional password for encrypted entries.</param>
-    public void Extract(Stream stream, string? password = null)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-
-        _archive.Extract([_index], 1, 0, new ArchiveStreamCallback(_index, stream, password));
-    }
+    /// <summary>Schedules extraction to a caller-owned stream through the archive's serialized operation gate.</summary>
+    public Task ExtractAsync(Stream stream, ExtractionOptions? options = null) =>
+        Task.Run(() => _owner.ExtractEntry(this, stream, options ?? new()), options?.CancellationToken ?? default);
 }

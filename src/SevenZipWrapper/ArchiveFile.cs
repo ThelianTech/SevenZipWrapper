@@ -2,451 +2,227 @@ namespace SevenZipWrapper;
 
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
-
 using SevenZipWrapper.Callbacks;
 using SevenZipWrapper.Interop;
 
-/// <summary>
-/// Opens, enumerates, and extracts entries from archive files using the 7z.dll COM interface.
-/// </summary>
+/// <summary>Opens, enumerates, and extracts archives through serialized native operations.</summary>
 [SupportedOSPlatform("windows")]
-public sealed class ArchiveFile : IDisposable
+public sealed partial class ArchiveFile : IDisposable
 {
     private readonly SevenZipHandle _sevenZipHandle;
     private readonly IInArchive _archive;
     private readonly InStreamWrapper _archiveStream;
+    private readonly OperationGate _operationGate = new();
+    private readonly string? _openPassword;
     private IReadOnlyList<ArchiveEntry>? _entries;
     private bool _disposed;
+    private bool _opened;
 
-    /// <summary>
-    /// The detected or specified archive format.
-    /// </summary>
     public SevenZipFormat Format { get; }
-
-    /// <summary>
-    /// Opens an archive from a file path. The format is guessed from the file extension or signature.
-    /// </summary>
-    /// <param name="archiveFilePath">Path to the archive file.</param>
-    /// <param name="libraryFilePath">Optional explicit path to <c>7z.dll</c>. If <see langword="null"/>, auto-detected.</param>
-    /// <exception cref="SevenZipException">The file does not exist or the format cannot be determined.</exception>
     public ArchiveFile(string archiveFilePath, string? libraryFilePath = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(archiveFilePath);
-
-        _sevenZipHandle = InitializeLibrary(libraryFilePath);
-
-        if (!File.Exists(archiveFilePath))
-        {
-            throw new SevenZipException("Archive file not found.");
-        }
-
-        string extension = Path.GetExtension(archiveFilePath);
-
-        if (!TryGuessFormatFromExtension(extension, out SevenZipFormat format)
-            && !TryGuessFormatFromSignature(archiveFilePath, out format))
-        {
-            throw new SevenZipException($"'{Path.GetFileName(archiveFilePath)}' is not a known archive type.");
-        }
-
-        Format = format;
-        _archive = _sevenZipHandle.CreateInArchive(Formats.FormatGuidMapping[format])
-                   ?? throw new SevenZipException("Failed to create IInArchive instance.");
-        _archiveStream = new InStreamWrapper(File.OpenRead(archiveFilePath));
-    }
-
-    /// <summary>
-    /// Opens an archive from a <see cref="Stream"/>. If <paramref name="format"/> is <see langword="null"/>,
-    /// the format is guessed from the stream signature.
-    /// </summary>
-    /// <param name="archiveStream">The archive stream to read from.</param>
-    /// <param name="format">Optional explicit archive format. If <see langword="null"/>, auto-detected from signature.</param>
-    /// <param name="libraryFilePath">Optional explicit path to <c>7z.dll</c>. If <see langword="null"/>, auto-detected.</param>
-    /// <exception cref="SevenZipException">The format cannot be determined or the archive cannot be opened.</exception>
+        : this(archiveFilePath, null, new ArchiveOpenOptions { LibraryFilePath = libraryFilePath }) { }
     public ArchiveFile(Stream archiveStream, SevenZipFormat? format = null, string? libraryFilePath = null)
+        : this(null, archiveStream ?? throw new ArgumentNullException(nameof(archiveStream)),
+            new ArchiveOpenOptions { Format = format, LibraryFilePath = libraryFilePath }) { }
+    public static ArchiveFile Open(string archiveFilePath, ArchiveOpenOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return new(archiveFilePath, null, options);
+    }
+    public static ArchiveFile Open(Stream archiveStream, ArchiveOpenOptions options)
     {
         ArgumentNullException.ThrowIfNull(archiveStream);
-
-        _sevenZipHandle = InitializeLibrary(libraryFilePath);
-
-        if (format is null)
-        {
-            if (!TryGuessFormatFromSignature(archiveStream, out SevenZipFormat guessedFormat))
-            {
-                throw new SevenZipException("Unable to guess archive format automatically.");
-            }
-
-            format = guessedFormat;
-        }
-
-        Format = format.Value;
-        _archive = _sevenZipHandle.CreateInArchive(Formats.FormatGuidMapping[format.Value])
-                   ?? throw new SevenZipException("Failed to create IInArchive instance.");
-        _archiveStream = new InStreamWrapper(archiveStream);
+        ArgumentNullException.ThrowIfNull(options);
+        return new(null, archiveStream, options);
     }
-
-    /// <summary>
-    /// Gets the list of entries in the archive. The archive is opened on first access.
-    /// </summary>
+    private ArchiveFile(string? filePath, Stream? source, ArchiveOpenOptions options)
+    {
+        SevenZipHandle? library = null;
+        IInArchive? archive = null;
+        InStreamWrapper? wrapper = null;
+        Stream? stream = source;
+        bool ownsStream = source is null || !options.LeaveOpen;
+        try
+        {
+            if (source is null)
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(filePath, "archiveFilePath");
+                if (!File.Exists(filePath)) throw new SevenZipException("Archive file not found.");
+                stream = File.OpenRead(filePath);
+            }
+            if (!stream!.CanRead || !stream.CanSeek)
+                throw new ArgumentException("Archive streams must be readable and seekable.", "archiveStream");
+            SevenZipFormat? format = options.Format;
+            if (format is null)
+            {
+                if (TryGuessFormatFromSignature(stream, out var fromSignature)) format = fromSignature;
+                else if (filePath is not null && TryGuessFormatFromExtension(Path.GetExtension(filePath), out var fromExtension)) format = fromExtension;
+                else throw new SevenZipException(new ArchiveFailure(FailureKind.UnsupportedFormat, "Unable to determine archive format."));
+            }
+            if (!Formats.FormatGuidMapping.TryGetValue(format.Value, out Guid classId))
+                throw new SevenZipNativeException(new(FailureKind.UnsupportedFormat, "The specified archive format is unsupported."));
+            library = InitializeLibrary(options.LibraryFilePath);
+            archive = library.CreateInArchive(classId);
+            wrapper = new InStreamWrapper(stream, leaveOpen: !ownsStream);
+            _sevenZipHandle = library; _archive = archive; _archiveStream = wrapper;
+            _openPassword = options.Password; Format = format.Value;
+        }
+        catch
+        {
+            try { if (archive is not null && Marshal.IsComObject(archive)) Marshal.ReleaseComObject(archive); }
+            finally
+            {
+                try { if (wrapper is not null) wrapper.Dispose(); else if (ownsStream) stream?.Dispose(); }
+                finally { library?.Dispose(); }
+            }
+            throw;
+        }
+    }
+    internal IDisposable EnterOperation(CancellationToken cancellationToken = default) => _operationGate.Enter(cancellationToken);
     public IReadOnlyList<ArchiveEntry> Entries
     {
-        get
+        get { using var operation = EnterOperation(); return LoadEntries(); }
+    }
+    private IReadOnlyList<ArchiveEntry> LoadEntries(int? maximumEntryCount = null)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_entries is not null)
         {
-            if (_entries is not null)
-            {
-                return _entries;
-            }
-
-            ulong checkPos = 32 * 1024;
-            int open = _archive.Open(_archiveStream, ref checkPos, null);
-
-            if (open != 0)
-            {
-                throw new SevenZipException("Unable to open archive.");
-            }
-
-            uint itemsCount = _archive.GetNumberOfItems();
-            List<ArchiveEntry> entries = new((int)itemsCount);
-
-            for (uint i = 0; i < itemsCount; i++)
-            {
-                entries.Add(new ArchiveEntry(_archive, i)
-                {
-                    FileName = GetPropertySafe<string>(i, ItemPropId.Path),
-                    IsFolder = GetProperty<bool>(i, ItemPropId.IsFolder),
-                    IsEncrypted = GetProperty<bool>(i, ItemPropId.Encrypted),
-                    Size = GetProperty<ulong>(i, ItemPropId.Size),
-                    PackedSize = GetProperty<ulong>(i, ItemPropId.PackedSize),
-                    CreationTime = GetPropertySafe<DateTime>(i, ItemPropId.CreationTime),
-                    LastWriteTime = GetPropertySafe<DateTime>(i, ItemPropId.LastWriteTime),
-                    LastAccessTime = GetPropertySafe<DateTime>(i, ItemPropId.LastAccessTime),
-                    CRC = GetPropertySafe<uint>(i, ItemPropId.CRC),
-                    Attributes = GetPropertySafe<uint>(i, ItemPropId.Attributes),
-                    Comment = GetPropertySafe<string>(i, ItemPropId.Comment),
-                    HostOS = GetPropertySafe<string>(i, ItemPropId.HostOS),
-                    Method = GetPropertySafe<string>(i, ItemPropId.Method),
-                    IsSplitBefore = GetPropertySafe<bool>(i, ItemPropId.SplitBefore),
-                    IsSplitAfter = GetPropertySafe<bool>(i, ItemPropId.SplitAfter)
-                });
-            }
-
-            _entries = entries;
+            ValidateEntryCount((uint)_entries.Count, maximumEntryCount);
             return _entries;
         }
-    }
-
-    /// <summary>
-    /// Extracts all entries to the specified output folder.
-    /// </summary>
-    /// <param name="outputFolder">Destination directory path.</param>
-    /// <param name="overwrite">If <see langword="true"/>, overwrites existing files.</param>
-    /// <param name="password">Optional password for encrypted archives.</param>
-    public void Extract(string outputFolder, bool overwrite = false, string? password = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputFolder);
-
-        Extract(entry =>
+        _archiveStream.State.Reset();
+        if (!_opened)
         {
-            string fileName = Path.Combine(outputFolder, entry.FileName ?? string.Empty);
-
-            if (entry.IsFolder)
-            {
-                return fileName;
-            }
-
-            return !File.Exists(fileName) || overwrite ? fileName : null;
-        },
-        password);
-    }
-
-    /// <summary>
-    /// Extracts entries using a callback to determine each entry's output path.
-    /// Return <see langword="null"/> from <paramref name="getOutputPath"/> to skip an entry.
-    /// </summary>
-    /// <param name="getOutputPath">A function that receives an <see cref="ArchiveEntry"/> and returns the output path, or <see langword="null"/> to skip.</param>
-    /// <param name="password">Optional password for encrypted archives.</param>
-    public void Extract(Func<ArchiveEntry, string?> getOutputPath, string? password = null)
-    {
-        ArgumentNullException.ThrowIfNull(getOutputPath);
-
-        Extract(getOutputPath, null, default, password);
-    }
-
-    /// <summary>
-    /// Extracts all entries to the specified output folder with progress reporting and cancellation support.
-    /// </summary>
-    /// <param name="outputFolder">Destination directory path.</param>
-    /// <param name="overwrite">If <see langword="true"/>, overwrites existing files.</param>
-    /// <param name="onFileExtracted">
-    /// Optional callback invoked after each file is successfully extracted.
-    /// The parameter is the cumulative count of files extracted so far (1-based).
-    /// Called on the calling thread � callers must dispatch to the UI thread if needed.
-    /// </param>
-    /// <param name="cancellationToken">Token to cancel the extraction. When cancelled,
-    /// <see cref="OperationCanceledException"/> is thrown after 7z.dll returns.</param>
-    /// <param name="password">Optional password for encrypted archives.</param>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is cancelled during extraction.
-    /// </exception>
-    public void Extract(
-        string outputFolder,
-        bool overwrite,
-        Action<int>? onFileExtracted,
-        CancellationToken cancellationToken,
-        string? password = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputFolder);
-
-        Extract(entry =>
-        {
-            string fileName = Path.Combine(outputFolder, entry.FileName ?? string.Empty);
-
-            if (entry.IsFolder)
-            {
-                return fileName;
-            }
-
-            return !File.Exists(fileName) || overwrite ? fileName : null;
-        },
-        onFileExtracted,
-        cancellationToken,
-        password);
-    }
-
-    /// <summary>
-    /// Extracts entries using a callback to determine each entry's output path,
-    /// with progress reporting and cancellation support.
-    /// Return <see langword="null"/> from <paramref name="getOutputPath"/> to skip an entry.
-    /// </summary>
-    /// <param name="getOutputPath">A function that receives an <see cref="ArchiveEntry"/>
-    /// and returns the output path, or <see langword="null"/> to skip.</param>
-    /// <param name="onFileExtracted">
-    /// Optional callback invoked after each file is successfully extracted.
-    /// The parameter is the cumulative count of files extracted so far (1-based).
-    /// </param>
-    /// <param name="cancellationToken">Token to cancel the extraction. When cancelled,
-    /// <see cref="OperationCanceledException"/> is thrown after 7z.dll returns.</param>
-    /// <param name="password">Optional password for encrypted archives.</param>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is cancelled during extraction.
-    /// </exception>
-    public void Extract(
-        Func<ArchiveEntry, string?> getOutputPath,
-        Action<int>? onFileExtracted,
-        CancellationToken cancellationToken,
-        string? password = null)
-    {
-        ArgumentNullException.ThrowIfNull(getOutputPath);
-
-        List<Stream?> fileStreams = [];
-
-        try
-        {
-            foreach (ArchiveEntry entry in Entries)
-            {
-                string? outputPath = getOutputPath(entry);
-
-                if (outputPath is null)
-                {
-                    fileStreams.Add(null);
-                    continue;
-                }
-
-                if (entry.IsFolder)
-                {
-                    Directory.CreateDirectory(outputPath);
-                    fileStreams.Add(null);
-                    continue;
-                }
-
-                string? directoryName = Path.GetDirectoryName(outputPath);
-
-                if (!string.IsNullOrWhiteSpace(directoryName))
-                {
-                    Directory.CreateDirectory(directoryName);
-                }
-
-                fileStreams.Add(File.Create(outputPath));
-            }
-
-            _archive.Extract(
-                null,
-                0xFFFFFFFF,
-                0,
-                new ArchiveStreamsCallback(fileStreams, password, onFileExtracted, cancellationToken));
-
-            // If 7z.dll returned due to E_ABORT, surface as OperationCanceledException
-            cancellationToken.ThrowIfCancellationRequested();
+            ulong checkPos = 32 * 1024;
+            var openCallback = new ArchivePasswordCallback(_openPassword);
+            int open = _archive.Open(_archiveStream, ref checkPos, openCallback);
+            _opened = open == 0;
+            _archiveStream.State.ThrowIfCaptured();
+            openCallback.State.ThrowIfCaptured();
+            if (openCallback.State.Failure is { } passwordFailure) throw new SevenZipNativeException(passwordFailure);
+            NativeStatus.Check(open, "archive open", FailureKind.InvalidArchive);
         }
+        uint itemsCount;
+        try { itemsCount = _archive.GetNumberOfItems(); }
+        catch (COMException ex) { throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, "Unable to enumerate archive entries.", NativeHResult: ex.HResult), ex); }
+        ValidateEntryCount(itemsCount, maximumEntryCount);
+        List<ArchiveEntry> entries = new();
+        for (uint i = 0; i < itemsCount; i++)
+        {
+            entries.Add(new ArchiveEntry(this, i)
+            {
+                FileName = GetProperty<string>(i, ItemPropId.Path),
+                IsFolder = GetProperty<bool>(i, ItemPropId.IsFolder),
+                IsEncrypted = GetProperty<bool>(i, ItemPropId.Encrypted),
+                Size = GetProperty<ulong>(i, ItemPropId.Size),
+                PackedSize = GetProperty<ulong>(i, ItemPropId.PackedSize),
+                CreationTime = GetProperty<DateTime>(i, ItemPropId.CreationTime),
+                LastWriteTime = GetProperty<DateTime>(i, ItemPropId.LastWriteTime),
+                LastAccessTime = GetProperty<DateTime>(i, ItemPropId.LastAccessTime),
+                CRC = GetProperty<uint>(i, ItemPropId.CRC),
+                Attributes = GetProperty<uint>(i, ItemPropId.Attributes),
+                Comment = GetProperty<string>(i, ItemPropId.Comment),
+                HostOS = GetProperty<string>(i, ItemPropId.HostOS),
+                Method = GetProperty<string>(i, ItemPropId.Method),
+                IsSplitBefore = GetProperty<bool>(i, ItemPropId.SplitBefore),
+                IsSplitAfter = GetProperty<bool>(i, ItemPropId.SplitAfter)
+            });
+        }
+        _entries = Array.AsReadOnly(entries.ToArray());
+        return _entries;
+    }
+    private static void ValidateEntryCount(uint count, int? maximum)
+    {
+        if (count > int.MaxValue || maximum is { } limit && count > limit)
+            throw new SevenZipException(new ArchiveFailure(FailureKind.ResourceLimitExceeded, "Archive entry count exceeds the configured or managed collection limit."));
+    }
+    public void Dispose() => _operationGate.Dispose(() =>
+    {
+        _disposed = true;
+        try { if (_opened) _archive.Close(); }
+        catch (COMException ex) { throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, "Unable to close archive.", NativeHResult: ex.HResult), ex); }
         finally
         {
-            foreach (Stream? stream in fileStreams)
+            try { Marshal.ReleaseComObject(_archive); }
+            finally
             {
-                stream?.Dispose();
+                try { _archiveStream.Dispose(); }
+                finally { _sevenZipHandle.Dispose(); }
             }
         }
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _archiveStream.Dispose();
-        Marshal.ReleaseComObject(_archive);
-        _sevenZipHandle.Dispose();
-
-        _disposed = true;
-    }
-
-    // -----------------------------------------
-    //  Private helpers
-    // -----------------------------------------
-
+    });
     private static SevenZipHandle InitializeLibrary(string? libraryFilePath)
     {
-        if (string.IsNullOrWhiteSpace(libraryFilePath))
-        {
-            libraryFilePath = ResolveLibraryPath();
-        }
-
+        if (!OperatingSystem.IsWindows() || RuntimeInformation.ProcessArchitecture != Architecture.X64)
+            throw new SevenZipNativeException(new(FailureKind.NativeLibraryFailure, "SevenZipWrapper requires a Windows x64 process."));
+        if (string.IsNullOrWhiteSpace(libraryFilePath)) libraryFilePath = ResolveLibraryPath();
         if (libraryFilePath is null || !File.Exists(libraryFilePath))
-        {
-            throw new SevenZipException("7z.dll not found.");
-        }
-
-        try
-        {
-            return new SevenZipHandle(libraryFilePath);
-        }
-        catch (Exception e)
-        {
-            throw new SevenZipException("Unable to initialize SevenZipHandle.", e);
-        }
+            throw new SevenZipNativeException(new(FailureKind.NativeLibraryFailure, "Native archive library not found."));
+        return new SevenZipHandle(libraryFilePath);
     }
-
     private static string? ResolveLibraryPath()
     {
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-
         ReadOnlySpan<string> candidates =
         [
-            Path.Combine(baseDir, "7z-x64.dll"),
-            Path.Combine(baseDir, "bin", "7z-x64.dll"),
-            Path.Combine(baseDir, "bin", "x64", "7z.dll"),
-            Path.Combine(baseDir, "x64", "7z.dll"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "7-Zip", "7z.dll")
+            Path.Combine(baseDir, "7z.dll"), Path.Combine(baseDir, "7z-x64.dll"),
+            Path.Combine(baseDir, "bin", "7z-x64.dll"), Path.Combine(baseDir, "bin", "x64", "7z.dll"),
+            Path.Combine(baseDir, "x64", "7z.dll")
         ];
-
-        foreach (string candidate in candidates)
-        {
-            if (File.Exists(candidate))
-            {
-                return candidate;
-            }
-        }
-
+        foreach (string candidate in candidates) if (File.Exists(candidate)) return candidate;
         return null;
     }
-
     private static bool TryGuessFormatFromExtension(string? fileExtension, out SevenZipFormat format)
     {
-        if (string.IsNullOrWhiteSpace(fileExtension))
-        {
-            format = SevenZipFormat.Undefined;
-            return false;
-        }
-
-        string ext = fileExtension.TrimStart('.').Trim();
-
-        // RAR and RAR5 share the .rar extension but have different GUIDs.
-        // Must fall through to signature detection to distinguish them.
-        if (ext.Equals("rar", StringComparison.OrdinalIgnoreCase))
-        {
-            format = SevenZipFormat.Undefined;
-            return false;
-        }
-
-        return Formats.ExtensionFormatMapping.TryGetValue(ext, out format);
+        format = SevenZipFormat.Undefined;
+        if (string.IsNullOrWhiteSpace(fileExtension)) return false;
+        string extension = fileExtension.TrimStart('.').Trim();
+        if (extension.Equals("rar", StringComparison.OrdinalIgnoreCase)) return false;
+        return Formats.ExtensionFormatMapping.TryGetValue(extension, out format);
     }
-
-    private static bool TryGuessFormatFromSignature(string filePath, out SevenZipFormat format)
-    {
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        return TryGuessFormatFromSignature(stream, out format);
-    }
-
     private static bool TryGuessFormatFromSignature(Stream stream, out SevenZipFormat format)
     {
-        int maxLength = Formats.MaxSignatureLength;
-        Span<byte> buffer = stackalloc byte[maxLength];
-
-        int bytesRead = stream.Read(buffer);
-        stream.Position -= bytesRead;
-
-        if (bytesRead < 2)
-        {
-            format = SevenZipFormat.Undefined;
-            return false;
-        }
-
+        Span<byte> buffer = stackalloc byte[Formats.MaxSignatureLength];
+        int bytesRead = ReadSignature(stream, buffer);
         ReadOnlySpan<byte> signature = buffer[..bytesRead];
-
+        // Empty ZIP archives begin with the end-of-central-directory signature.
+        if (signature.StartsWith(new byte[] { 0x50, 0x4B, 0x05, 0x06 }))
+        { format = SevenZipFormat.Zip; return true; }
         foreach (KeyValuePair<SevenZipFormat, byte[]> pair in Formats.FileSignatures)
         {
-            if (signature.Length >= pair.Value.Length
-                && signature[..pair.Value.Length].SequenceEqual(pair.Value))
-            {
-                format = pair.Key;
-                return true;
-            }
+            if (signature.Length >= pair.Value.Length && signature[..pair.Value.Length].SequenceEqual(pair.Value))
+            { format = pair.Key; return true; }
         }
-
         format = SevenZipFormat.Undefined;
         return false;
     }
-
-    private T? GetPropertySafe<T>(uint fileIndex, ItemPropId propId)
+    private static int ReadSignature(Stream stream, Span<byte> buffer)
     {
+        long originalPosition = stream.Position;
         try
         {
-            return GetProperty<T>(fileIndex, propId);
+            int count = 0;
+            while (count < buffer.Length)
+            {
+                int read = stream.Read(buffer[count..]);
+                if (read == 0) break;
+                count += read;
+            }
+            return count;
         }
-        catch (InvalidCastException)
-        {
-            return default;
-        }
+        finally { stream.Position = originalPosition; }
     }
-
     private T? GetProperty<T>(uint fileIndex, ItemPropId propId)
     {
-        PropVariant propVariant = new();
-        _archive.GetProperty(fileIndex, propId, ref propVariant);
-        object? value = propVariant.GetObject();
-
-        if (propVariant.VarType == VarEnum.VT_EMPTY)
+        PropVariant variant = new();
+        try
         {
-            propVariant.Clear();
-            return default;
+            _archive.GetProperty(fileIndex, propId, ref variant);
+            return MetadataConverter.Convert<T>(variant.GetObject(), variant.VarType, allowNumericString: propId == ItemPropId.Method);
         }
-
-        propVariant.Clear();
-
-        if (value is null)
-        {
-            return default;
-        }
-
-        Type type = typeof(T);
-        Type underlyingType = Nullable.GetUnderlyingType(type) ?? type;
-
-        if (underlyingType == typeof(DateTime))
-        {
-            return (T)(object)(DateTime)value;
-        }
-
-        return (T)Convert.ChangeType(value.ToString(), underlyingType);
+        catch (COMException ex)
+        { throw new SevenZipNativeException(new(FailureKind.NativeInteropFailure, "Unable to read archive metadata.", NativeHResult: ex.HResult), ex); }
+        finally { variant.Clear(); }
     }
 }

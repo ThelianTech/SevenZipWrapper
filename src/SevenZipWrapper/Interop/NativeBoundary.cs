@@ -18,6 +18,9 @@ internal sealed class CallbackState
     private ExceptionDispatchInfo? _exception;
     internal ArchiveFailure? Failure { get; private set; }
     internal bool HasFailure => _exception is not null || Failure is not null;
+    internal bool HasCapturedException => _exception is not null;
+    internal void Reset() { _exception = null; Failure = null; }
+    internal int Fail(ArchiveFailure failure) { Failure ??= failure; return NativeStatus.Abort; }
     internal int Capture(Exception exception)
     {
         _exception ??= ExceptionDispatchInfo.Capture(exception);
@@ -51,7 +54,7 @@ internal sealed class CallbackState
 
 internal static class MetadataConverter
 {
-    internal static T? Convert<T>(object? value, VarEnum variantType)
+    internal static T? Convert<T>(object? value, VarEnum variantType, bool allowNumericString = false)
     {
         if (variantType is VarEnum.VT_EMPTY or VarEnum.VT_NULL) return default;
         try
@@ -64,7 +67,8 @@ internal static class MetadataConverter
             else if (variantType is VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_I4 or VarEnum.VT_UI4 or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_INT or VarEnum.VT_UINT)
             {
                 decimal number = value switch { sbyte n => n, byte n => n, short n => n, ushort n => n, int n => n, uint n => n, long n => n, ulong n => n, _ => throw new InvalidCastException() };
-                converted = target == typeof(ulong) ? (object)checked((ulong)number) : target == typeof(uint) ? checked((uint)number) : target == typeof(long) ? checked((long)number) : target == typeof(int) ? checked((int)number) : target == typeof(ushort) ? checked((ushort)number) : target == typeof(short) ? checked((short)number) : target == typeof(byte) ? checked((byte)number) : target == typeof(sbyte) ? checked((sbyte)number) : throw new InvalidCastException();
+                if (target == typeof(string) && allowNumericString) return (T)(object)number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                converted = target == typeof(ulong) ? (object)checked((ulong)number) : target == typeof(uint) ? (object)checked((uint)number) : target == typeof(long) ? (object)checked((long)number) : target == typeof(int) ? (object)checked((int)number) : target == typeof(ushort) ? (object)checked((ushort)number) : target == typeof(short) ? (object)checked((short)number) : target == typeof(byte) ? (object)checked((byte)number) : target == typeof(sbyte) ? (object)checked((sbyte)number) : throw new InvalidCastException();
             }
             else throw new InvalidCastException();
             return (T)converted;
