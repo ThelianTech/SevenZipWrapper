@@ -1,22 +1,17 @@
-################################################################################
+﻿################################################################################
 # This .gitignore file was automatically created by Microsoft(R) Visual Studio.
 ################################################################################
 
 /.vs
-/src/SevenZipWrapper/bin
-/src/SevenZipWrapper/obj
-/src/SevenZipWrapper.Benchmark/bin
-/src/SevenZipWrapper.Benchmark/obj
-/src/SevenZipWrapper.Example/bin
-/src/SevenZipWrapper.Example/obj
-/src/SevenZipWrapper.Tests/bin
-/src/SevenZipWrapper.Tests/obj
+/SevenZipWrapper/bin
+/SevenZipWrapper/obj
+/SevenZipWrapper.Benchmark/bin
+/SevenZipWrapper.Benchmark/obj
+/SevenZipWrapper.Example/bin
+/SevenZipWrapper.Example/obj
+/SevenZipWrapper.Tests/bin
+/SevenZipWrapper.Tests/obj
 /nupkg
 /publish
 /SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
 *.ps1
-!/scripts/*.ps1
-**/bin/
-**/obj/
-/artifacts/
-**/BenchmarkDotNet.Artifacts/
