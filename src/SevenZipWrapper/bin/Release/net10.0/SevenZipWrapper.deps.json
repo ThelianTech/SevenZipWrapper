@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "SevenZipWrapper/0.9.5-beta": {
+        "runtime": {
+          "SevenZipWrapper.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SevenZipWrapper/0.9.5-beta": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
