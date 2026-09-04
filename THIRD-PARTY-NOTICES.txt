@@ -1,0 +1,12 @@
+SevenZipWrapper managed code is distributed under the MIT license (LICENSE).
+
+The package also includes the unmodified Windows x64 7z.dll from 7-Zip 26.02.
+7-Zip Copyright (C) 1999-2026 Igor Pavlov.
+7z.dll is covered by GNU LGPL terms, unRAR restrictions, and BSD portions.
+The original upstream terms are reproduced in licenses/7zip-License.txt.
+
+Upstream project and source code: https://www.7-zip.org/
+Versioned source: https://github.com/ip7z/7zip/tree/26.02
+Versioned distribution: https://github.com/ip7z/7zip/releases/tag/26.02
+
+The MIT package license describes the wrapper, not the bundled native engine.
