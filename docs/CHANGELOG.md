@@ -35,7 +35,7 @@ Changes below were checked against repository HEAD `2e161f1` on 2026-09-04. The 
 
 - **Moved** solution projects under `src/` and supporting documentation under `docs/`; updated solution references and README paths.
 - **Centralized** build/package versioning in root `Directory.Build.props`, alongside deterministic builds, warnings-as-errors, and lock-file restore settings. Added the SDK pin in `global.json` and dependency lock files for all four projects.
-- **Added** `scripts/Build-Package.ps1` for locked restore, clean Release build, tests with coverage, packaging, and consumer verification. `-Version` supplies a consistent temporary override; uploading requires explicit `-Publish` and `NUGET_API_KEY`.
+- **Added** `scripts/Build-Package.ps1` for locked restore, clean Release build, tests with coverage, benchmark smoke runs, packaging, and consumer verification. Each run retains test, benchmark, verification, and provenance evidence under `artifacts`; `latest-build.json` records the latest successful run and package checksum. `-Version` supplies a consistent temporary override; uploading requires explicit `-Publish` and `NUGET_API_KEY`.
 - **Added** `scripts/Verify-Package.ps1`, which evaluates package identity/version from MSBuild, checks the exact package contents and native provenance, and runs isolated package-consumer build and publish extraction checks.
 - **Added** a Windows x64 GitHub Actions verification workflow with retained test/package evidence. The workflow does not upload packages to NuGet.
 - **Fixed** package inclusion of the root README, third-party notices, and native license; retained native content/contentFiles copying for build and publish output.

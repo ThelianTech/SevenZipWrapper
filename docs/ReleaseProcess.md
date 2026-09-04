@@ -37,10 +37,20 @@ The bundled DLL is unmodified 7-Zip 26.02. Its checksum was matched to `7z.dll` 
 ## Manual build and publishing
 
 Run `./scripts/Build-Package.ps1` in PowerShell 7 on Windows x64. It performs locked
-restore, clean Release build, tests with coverage, `dotnet pack`, and the existing
+restore, clean Release build, tests with coverage, four extraction benchmark Dry runs, `dotnet pack`, and the existing
 `Verify-Package.ps1` checks. It stops on failure and writes the package to
 `artifacts/packages`. It works from any current directory and restores your original
 directory when finished. The default version comes from `Directory.Build.props`.
+
+Each run creates separate evidence folders under `artifacts/test-results`,
+`artifacts/benchmarks`, `artifacts/package-verification`, and `artifacts/provenance`.
+The provenance folder contains a copy of the audited native metadata, license, notices,
+and a build artifact index. It does not redownload the original native installer or tools.
+`artifacts/latest-build.json` points to the latest successfully completed local run and
+records the package version and checksum. The package at
+`artifacts/packages/<PackageId>.<PackageVersion>.nupkg` is rebuilt and replaced for the
+selected version. Older evidence folders and other package versions are retained.
+Benchmark runs are smoke checks, not statistically reliable performance comparisons.
 
 ```powershell
 # Build and verify locally; no upload.
