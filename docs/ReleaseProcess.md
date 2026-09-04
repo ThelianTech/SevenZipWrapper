@@ -34,6 +34,41 @@ The package verifier uses an isolated NuGet cache with only the produced package
 
 The bundled DLL is unmodified 7-Zip 26.02. Its checksum was matched to `7z.dll` extracted from the official x64 installer without running the installer. `scripts/native-provenance.json` records upstream artifact identities and verification data. [Official release](https://github.com/ip7z/7zip/releases/tag/26.02). SDK pinning and dependency locking follow the [.NET SDK selection](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json) and [NuGet lock-file](https://learn.microsoft.com/en-us/nuget/consume-packages/package-references-in-project-files) contracts.
 
+## Manual build and publishing
+
+Run `./scripts/Build-Package.ps1` in PowerShell 7 on Windows x64. It performs locked
+restore, clean Release build, tests with coverage, `dotnet pack`, and the existing
+`Verify-Package.ps1` checks. It stops on failure and writes the package to
+`artifacts/packages`. It works from any current directory and restores your original
+directory when finished. The default version comes from `Directory.Build.props`.
+
+```powershell
+# Build and verify locally; no upload.
+./scripts/Build-Package.ps1
+
+# Optional temporary version override, shared by build, pack, and verification.
+./scripts/Build-Package.ps1 -Version 1.0.1-preview.1
+
+# Explicitly rebuild, verify, and upload to NuGet.org.
+# Read-Host keeps the key out of saved script text and command history.
+$env:NUGET_API_KEY = Read-Host 'NuGet API key' -MaskInput
+try {
+    ./scripts/Build-Package.ps1 -Publish
+}
+finally {
+    Remove-Item Env:NUGET_API_KEY -ErrorAction SilentlyContinue
+}
+```
+
+Use `-Source <feed-url>` with `-Publish` for another destination. Supply a key authorized
+for that feed/package. Update the central version before a new release, or supply the
+same `-Version` override to the publishing invocation. The script pushes only the exact
+package selected from evaluated build metadata, never every package in the output folder.
+
+`dotnet pack` creates the `.nupkg`; `dotnet nuget push` uploads it. The consumer
+`dotnet publish` inside the verifier only creates a local application output directory.
+The CI workflow builds and verifies packages but does not upload them to a package feed.
+
 ## Decision evidence
 
 Paths below are relative to the repository. Core source is under `src/SevenZipWrapper`; behavioral tests are under `src/SevenZipWrapper.Tests/CoreTests` unless otherwise noted.
@@ -71,17 +106,25 @@ Remaining optional work includes fuller encrypted-archive certification, additio
 
 **READY FOR OWNER PUBLISH STEP**, with encrypted-archive support explicitly experimental under Decision 4. No unresolved required implementation or local verification blocker remains.
 
-Verified on Windows x64 with .NET SDK 10.0.400:
+Reverified after source restoration on September 4, 2026, on Windows x64 with .NET SDK 10.0.400:
 
 - Locked restore and clean Release build passed; zero compiler/analyzer warnings and errors.
-- Full suite: 208 passed, 0 failed, 0 skipped. This includes the final source-compatible null-password call and configured count limit before entry materialization.
-- Coverage: 828/912 lines (90.78%) and 508/612 branches (83.00%). No percentage threshold substitutes for the direct regression cases above.
+- Full suite: 209 passed, 0 failed, 0 skipped. This includes source-compatible null-password calls, the configured count limit before entry materialization, and consistent sync/async default overwrite behavior.
+- Coverage: 800/874 lines (91.53%) and 508/606 branches (83.83%). No percentage threshold substitutes for the direct regression cases above.
 - Final package: `artifacts/packages/SevenZipWrapper.1.0.0.nupkg`.
 - Strict package contents, native 26.02 version, x64 PE architecture, checksum and upstream license checks passed.
 - Isolated package-only restore, locked restore, consumer build, framework-dependent publish and both extraction smoke runs passed.
 - Four existing extraction benchmarks completed their Dry job. Results are smoke observations only; the large historical fixture was unavailable.
 - Independent native/lifecycle and path/core reviews produced fixes and passing regressions, including callback exception identity, native failures, duplicate selector targets, handle-based partial-file cleanup and disposal reentrancy.
 
-Evidence: `artifacts/test-results/tests.trx`, `artifacts/test-results/4143b312-5446-4f29-a3bb-58373541848f/coverage.cobertura.xml`, and `artifacts/package-verification/f91133de25fc405a8f481661e567abfc/verification.json`. These generated artifacts are ignored and do not ship in the NuGet package.
+Evidence: `artifacts/test-results/tests.trx`, `artifacts/test-results/3d7be53d-d5bd-4cd6-8990-bcb791a91f8e/coverage.cobertura.xml`, and `artifacts/package-verification/a1c396215f03425d87117d21e2228aae/verification.json`. These generated artifacts are ignored and do not ship in the NuGet package.
 
 The CI workflow is configured and its command sequence was exercised locally; it has not been dispatched on GitHub. Publication remains a separate owner action. Codex did not commit, push, tag or publish. The owner's existing source/docs reorganization was preserved; build outputs already tracked by the repository changed during verification and were not removed from the index.
+
+## September 4 source restoration
+
+The failing working tree combined the earlier tracked implementation with retained new extraction helpers and tests. The compiler reported a missing partial declaration and duplicate extraction members. Restoration reconnected the canonical extraction engine, parent-owned entries, operation gate, native callback/HRESULT handling, metadata conversion, detection, and package assets. An independent review also found and corrected differing default overwrite behavior between synchronous and asynchronous single-entry file extraction.
+
+The scoped tracked implementation in HEAD matched commit `ae5723c`. Reflog entries record resets between 00:29:59 and 00:31:11 (-0600) on September 4; they do not establish reset mode, actor, or the precise loss of uncommitted edits. The named revert `f3810fb` affected only `.gitignore`. No recoverable complete 1.0 implementation was found in the checked refs, reflog, or unreachable commits.
+
+The implementation instructions and locked decisions were reread and left unchanged during this repair, verified by SHA-256 before and after. Both are currently untracked, so Git cannot establish whether they changed before this repair. Central versioning, package-script version evaluation, and the owner's solution and ignore-file changes were preserved.
