@@ -3,14 +3,9 @@
 ################################################################################
 
 /.vs
-/SevenZipWrapper/bin
-/SevenZipWrapper/obj
-/SevenZipWrapper.Benchmark/bin
-/SevenZipWrapper.Benchmark/obj
-/SevenZipWrapper.Example/bin
-/SevenZipWrapper.Example/obj
-/SevenZipWrapper.Tests/bin
-/SevenZipWrapper.Tests/obj
+# Build outputs for all projects under src, including nested projects.
+/src/**/bin/
+/src/**/obj/
 /nupkg
 /publish
 /SevenZipWrapper.Benchmark/Resources/LT_Nemesis.7z
